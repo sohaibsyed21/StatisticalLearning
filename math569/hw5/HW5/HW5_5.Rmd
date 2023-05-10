@@ -1,0 +1,214 @@
+---
+title: "Homework 5"
+author: "Sohaib Syed"
+date: "2023-04-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Problem 5
+
+## generate data
+
+```{r}
+library(ggplot2)
+library(reshape)
+library(caret)
+library(leaps)
+set.seed(123)
+
+n <- 80 # Number of rows
+p <- 20 # Number of predictors
+
+# Create a data frame with random values uniformly distributed from 0 to 1
+df <- data.frame(matrix(runif(n * p), nrow = n))
+
+# Rename the column names to X1, X2, ..., X20
+colnames(df) <- paste0("X", 1:p)
+```
+
+## separate data frame so one is for classification and another for reggression
+
+```{r}
+knn_df<-df
+pbest_df<-df
+
+knn_df$Y<-ifelse(knn_df$X1 > 0.5, 1, 0)
+
+pbest_df$Y<-ifelse(rowSums(pbest_df[,1:10])>5,1,0)
+
+rm(df)
+```
+
+## train -test split for knn model
+```{r}
+trainIndex <- createDataPartition(knn_df$Y, p = 0.8, list = FALSE)
+X_train_knn <- knn_df[trainIndex, -21]
+X_test_knn <- knn_df[-trainIndex, -21]
+Y_train_knn <- knn_df[trainIndex,21]
+Y_test_knn <- knn_df[-trainIndex,21]
+```
+
+## fit knn reg
+
+```{r}
+knn_regression <- function(k, X_train_knn, X_test_knn, Y_train_knn) {
+  fit <- knnreg(X_train_knn, Y_train_knn, k = k)
+  Y_pred<-predict(fit,X_test_knn)
+  return(Y_pred)
+}
+
+calc_var_bias_regerror <- function(Y_pred, Y_test_knn) {
+  var <- var(Y_pred)
+  bias <- mean((Y_pred-Y_test_knn)^2)-var
+  error <- mean((Y_pred-Y_test_knn)^2)
+  return(list(var = var, bias = bias, error = error))
+}
+k_range <- c(seq(50, 10, by = -10), 8, 5, 1)
+variance_knnreg <- rep(0, length(k_range))
+squared_bias_knnreg <- rep(0, length(k_range))
+squared_error_knnreg <- rep(0, length(k_range))
+
+for (i in 1:length(k_range)) {
+  Y_pred <- knn_regression(k = k_range[i], X_train_knn = X_train_knn, X_test_knn = X_test_knn, Y_train_knn = Y_train_knn)
+  metrics <- calc_var_bias_regerror(Y_pred = Y_pred, Y_test_knn = Y_test_knn)
+  variance_knnreg[i] <- mean(metrics$var)
+  squared_bias_knnreg[i] <- mean(metrics$bias)
+  squared_error_knnreg[i] <- mean(metrics$error)
+}
+
+df_knnregmetrics <- data.frame(k = k_range, variance_knnreg = variance_knnreg, squared_bias_knnreg = squared_bias_knnreg, squared_error_knnreg=squared_error_knnreg)
+df_longknnreg<- melt(df_knnregmetrics, id.vars = "k", variable.name = "metric", value.name = "value")
+
+ggplot(df_longknnreg, aes(x = k, y = value, color = variable)) +
+  geom_line()+
+  labs(title = "Variance, Squared Bias, EPE(MSE) as a Function of K for KNN Regression",
+       x = "K",
+       y = "Value")+
+  scale_color_manual(values=c('cyan','green','orange'))+
+  scale_x_reverse()
+
+```
+
+## fit knn class
+
+```{r}
+knn_regression_class <- function(k, X_train_knn, X_test_knn, Y_train_knn) {
+  fit <- knnreg(X_train_knn,Y_train_knn, k = k)
+  Y_pred<-ifelse(predict(fit,X_test_knn)>0.5,0,1)
+  return(Y_pred)
+}
+
+calc_classerror <- function(Y_pred, Y_test_knn) {
+  error <- mean((Y_pred!=Y_test_knn))
+  return(error = error)
+}
+
+squared_error_knn <- rep(0, length(k_range))
+
+for (i in 1:length(k_range)) {
+  Y_pred <- knn_regression_class(k = k_range[i], X_train_knn = X_train_knn, X_test_knn = X_test_knn, Y_train_knn = Y_train_knn)
+  metrics <- calc_classerror(Y_pred = Y_pred, Y_test_knn = Y_test_knn)
+  squared_error_knn[i] <- mean(metrics)
+}
+
+df_knn <- data.frame(k = k_range, variance_knnreg = variance_knnreg, squared_bias_knnreg = squared_bias_knnreg, squared_error_knn=squared_error_knn)
+df_longknn <- melt(df_knn, id.vars = "k", variable.name = "metric", value.name = "value")
+
+ggplot(df_longknn, aes(x = k, y = value, color = variable)) +
+  geom_line()+
+  labs(title = "Variance, Squared Bias, EPE(MSE) as a Function of K for KNN Regression",
+       x = "K",
+       y = "Value")+
+  scale_color_manual(values=c('cyan','green','orange'))+
+  scale_x_reverse()
+
+```
+
+## Linear Regression best subset
+
+https://stackoverflow.com/questions/37314192/error-in-r-no-applicable-method-for-predict-applied-to-an-object-of-class-re
+
+```{r}
+## case 2
+trainIndex <- createDataPartition(knn_df$Y, p = 0.8, list = FALSE)
+X_train <- pbest_df[trainIndex,]
+X_test <- pbest_df[-trainIndex,]
+
+predict.regsubsets = function(object,newdata,id,...){
+      form = as.formula(object$call[[2]]) # Extract the formula used when we called regsubsets()
+      mat = model.matrix(form,newdata)    # Build the model matrix
+      coefi = coef(object,id=id)          # Extract the coefficiants of the ith model
+      xvars = names(coefi)                # Pull out the names of the predictors used in the ith model
+      mat[,xvars]%*%coefi               # Make predictions using matrix multiplication
+}
+
+calc_var_bias_reg <- function(Y_pred, Y_test_knn) {
+  var <- var(Y_pred)
+  bias <- (mean(Y_pred)-Y_test_knn)^2
+  error <- mean((Y_pred-Y_test_knn)^2)
+  return(list(var = var, bias = bias, error = error))
+}
+
+variance_reg <- rep(0, length(1:20))
+squared_bias_reg <- rep(0, length(1:20))
+squared_error_reg <- rep(0, length(1:20))
+
+regfit_full = regsubsets(Y~., data=X_train,nvmax=20)
+for(i in 1:20){
+        
+        # Predict the values of the current fold from the "best subset" model on i predictors
+        Y_pred <- predict(regfit_full, X_test, id=i)
+        metrics <- calc_var_bias_reg(Y_pred = Y_pred, Y_test_knn = X_test$Y)
+        variance_reg[i] <- mean(metrics$var)
+        squared_bias_reg[i] <- mean(metrics$bias)
+        squared_error_reg[i] <- mean(metrics$error)
+        
+}
+
+df_reg <- data.frame(p = 1:20, variance_reg = variance_reg, squared_bias_reg = squared_bias_reg, squared_error_reg=squared_error_reg)
+df_longreg <- melt(df_reg, id.vars = "p", variable.name = "metric", value.name = "value")
+
+ggplot(df_longreg, aes(x = p, y = value, color = variable)) +
+  geom_line()+
+  labs(title = "Variance, Squared Bias, EPE(MSE) as a Function of P for linear Regression",
+       x = "K",
+       y = "Value")+
+  scale_color_manual(values=c('cyan','green','orange'))
+
+
+```
+
+## linear classification subset
+
+```{r}
+## case 2
+
+squared_error_class <- rep(0, length(1:20))
+
+regfit_full = regsubsets(Y~., data=X_train,nvmax=20)
+
+for(i in 1:20){
+        
+        # Predict the values of the current fold from the "best subset" model on i predictors
+        Y_pred <- ifelse(predict(regfit_full, X_test, id=i)>0.5,1,0)
+        metrics <- calc_classerror(Y_pred = Y_pred, Y_test_knn = X_test$Y)
+        squared_error_class[i] <- mean(metrics)
+        
+}
+
+df_reg <- data.frame(p = 1:20, variance_reg = variance_reg, squared_bias_reg = squared_bias_reg, squared_error_class=squared_error_class)
+df_longreg <- melt(df_reg, id.vars = "p", variable.name = "metric", value.name = "value")
+
+ggplot(df_longreg, aes(x = p, y = value, color = variable)) +
+  geom_line()+
+  labs(title = "Variance, Squared Bias, EPE(0-1) as a Function of P for linear Regression",
+       x = "K",
+       y = "Value")+
+  scale_color_manual(values=c('cyan','green','orange'))
+
+
+```

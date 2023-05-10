@@ -1,0 +1,62 @@
+---
+title: "Homework 3"
+author: "Sohaib Syed"
+date: "2023-02-27"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Problem 3
+
+```{r}
+library(ggplot2)
+library(MASS)
+library(mvtnorm)
+
+set.seed(0)
+# Variance Covariance matrix for random bivariate gaussian sample
+var_covar <- matrix(data = c(1, 0.5, 0.5, 1), nrow = 2)
+  
+# Random bivariate Gaussian samples for class 1
+C1 <- rmvnorm(100, mean = c(1, 2), sigma = var_covar)
+  
+# Random bivariate Gaussian samples for class 2
+C2 <- rmvnorm(100, mean = c(1, -2), sigma = var_covar)
+
+# Samples for the dependent variable
+Y_samples <- c(rep(1, 100), rep(2, 100))
+  
+# Combining the independent and dependent variables into a dataframe
+dataset <- as.data.frame(cbind(rbind(C1, C2), Y_samples))
+colnames(dataset) <- c("X1", "X2", "Y")
+dataset$Y <- as.character(dataset$Y)
+  
+# Plot the above samples and color by class labels
+centroids <- aggregate(cbind(X1,X2)~Y,dataset,mean)
+
+ggplot() + geom_point(data = dataset, aes(x = X1, y = X2,
+color = Y),size = 2, alpha = .8) +
+geom_point(data = centroids, aes(x = X1, y = X2),shape=3,alpha=1)
+```
+
+```{r}
+
+mu1<-rbind(sum(C1[,1])/nrow(C1),sum(C1[,2])/nrow(C1))
+mu2<-rbind(sum(C2[,1])/nrow(C2),sum(C2[,2])/nrow(C2))
+common_cov<-matrix(data=c(0,0,0,0),nrow=2,ncol=2)
+
+
+
+for (i in C1){
+  common_cov<-common_cov+(((i-mu1)%*%t(i-mu1)/ (length(C1+C2)-2)))
+}
+
+for (i in C2){
+  common_cov<-common_cov+(((i-mu2)%*%t(i-mu2))/ (length(C1+C2)-2))
+}
+
+```
